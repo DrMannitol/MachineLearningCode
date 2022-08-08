@@ -5,6 +5,7 @@ import numpy as np
 import os
 import sklearn
 import scipy
+
 #导入按病例预后数据文件，显示数据基本信息
 FilePath = 'D:/Radiomics/ICH and pneumonia/AI5/'
 data = pd.read_excel(os.path.join(FilePath,'RISA-SAP3-01.xlsx'))
