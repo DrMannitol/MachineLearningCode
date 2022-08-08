@@ -1,0 +1,130 @@
+#Original coding for feature selection with LASSO regression and related figure plotting. Sharing as supplemental materials of my article.
+# 数据包导入
+import pandas as pd
+import numpy as np
+import os
+import sklearn
+import scipy
+#导入按病例预后数据文件，显示数据基本信息
+FilePath = 'D:/Radiomics/ICH and pneumonia/AI5/'
+data = pd.read_excel(os.path.join(FilePath,'RISA-SAP3-01.xlsx'))
+print('数据特征：')
+print(data.info())
+
+x = pd.DataFrame()
+x = data.iloc[:,1:] #选取自变量
+index=[]
+#导入数据标化组件
+from sklearn.preprocessing import StandardScaler 
+colNames = x.columns #保留特征名称（列名）
+x_ = StandardScaler().fit_transform(x) #自变量标化
+x_ = pd.DataFrame(x_) #转为DataFrame格式
+x_.columns = colNames #重新赋予特征名称（列名）
+x_ = x_.astype(np.float64)
+y = data['SAP'] #选取因变量
+from sklearn.linear_model import LassoCV #导入LASSO回归组件
+a = -3
+b = 0
+n = 100
+lambdas = np.logspace(a,b,n,base = 10) #λ值取100个值介于10^a至10^b之间的logspace
+model_LassoCV = LassoCV(alphas = lambdas, cv = 10, 
+                        fit_intercept=True, normalize=False, precompute='auto', max_iter = 1e5, tol=0.0001,
+                        copy_X=True, verbose=False, positive=False, random_state=None, selection='cyclic')
+model_LassoCV.fit(x_,y)
+#α值即λ值，cv为数据划分次数（n-1份的训练集及n份测试集），max_iter为最高迭代次数（尝试计算次数）
+print('λ=' + str(model_LassoCV.alpha_) + '（λ介于' + str(pow(10,a)) + '与' + str(pow(10,b))  + '之间属合法）')
+#model_LassoCV.alpha_为最优正则化参数，alpha：理论上输出合适的值若大于lambda上限或低于下限，应予以修改lambda取值范围
+print('---')
+
+coef = pd.Series(model_LassoCV.coef_, index = x_.columns) #model_LassoCV.coef_为各特征列的参数值或者说权重参数
+print('LASSO回归选择共' + str(sum(coef != 0)) + '个变量，并排除共' + str(sum(coef == 0)) +'个变量')
+index = coef[coef != 0].index
+x_ = data[index]
+print('---')
+
+print('选择变量为：')
+if model_LassoCV.alpha_ > pow(10,a) and model_LassoCV.alpha_ < pow(10,b):
+    print(coef[coef != 0])
+else:
+    print('λ非法取值')
+print('选择后自变量：')
+
+lasso_var = pd.DataFrame()
+lasso_var = pd.concat([y, x_],axis=1)
+lasso_var.to_excel(os.path.join(FilePath,'output','LASSO variables.xlsx'))
+lasso_var
+
+import matplotlib.pyplot as plt
+
+#描绘柱状图，表明特征权重
+%matplotlib inline
+x_values = abs(coef[coef != 0])
+x_values = x_values.sort_values() #升序列排列
+y_values = np.arange(len(index))
+
+plt.figure(figsize=(5,3),dpi=200) #设置图片大小、分辨率
+plt.grid()
+plt.barh(y_values, x_values
+       ,height=0.7, color = 'lightblue', edgecolor = 'black' , alpha = 0.8, align='center') #柱状图内容及边框颜色、柱状图不透明度、对齐方式
+plt.yticks(y_values, x_values.index #定义x轴标签名称
+          , rotation = '30', ha = 'right', va = 'top') #名称旋转度，水平对齐及垂直对齐方式
+plt.xlabel('Coefficients' #x轴标签名称
+          , fontname='SimHei', fontsize='15') #字体、字号
+plt.ylabel('Variables', fontname='SimHei', fontsize='15')  #y轴标签名称
+plt.title('Variable Coefficients in the LASSO Regression', fontsize='16') #标题名称
+
+plt.savefig(os.path.join(FilePath,'output','LASSO Coefficients.png'), bbox_inches='tight') #保存图片
+plt.show()
+
+import matplotlib.pyplot as plt
+fig = plt.figure(figsize=(5,6),dpi=200)
+plt.subplots_adjust(hspace=0.05)
+
+ax1=plt.subplot(2,1,1)
+MSEs = (model_LassoCV.mse_path_)
+"""
+MSEs_mean = np.apply_along_axis(np.mean,1,MSEs) #1为列，按列计算lambda所取值对应MSE的mean
+MSEs_std = np.apply_along_axis(np.std,1,MSEs) #1为列，按列计算lambda所取值对应MSE的std（标准差）
+"""
+MSEs_mean, MSEs_std = [], []
+for i in range(len(MSEs)):
+    MSEs_mean.append(MSEs[i].mean())
+    MSEs_std.append(MSEs[i].std())
+
+ax1.errorbar(model_LassoCV.alphas_, MSEs_mean #x轴为lambda，y轴为均值
+            , yerr = MSEs_std #y的误差范围（标准差）
+            , fmt = 's' #数据点标记形式
+            , ms = 1 #数据点大小
+            , mfc = 'r' #数据点颜色
+            , mec = 'r' #数据点边缘颜色
+            , ecolor = 'lightblue' #误差棒颜色
+            , elinewidth = 1 #误差棒线宽度
+            , capsize = 1.5 #误差棒边界线长度
+            , capthick = 1) #误差棒边界线厚度
+ax1.semilogx() #x轴取对数坐标
+ax1.axvline(model_LassoCV.alpha_, color = 'black', ls = '--') #最佳lambda处作纵向虚线
+#plt.annotate('best lambda = '+str(model_LassoCV.alpha_)[:7], fontsize = '12', xy=(model_LassoCV.alpha_+0.005, max(MSEs_mean)), xytext=(2*model_LassoCV.alpha_, max(MSEs_mean)-0.025),
+             #绘制箭头标题，lambda取值7位数，字号，箭头所指坐标，字体坐标
+             #arrowprops=dict(facecolor='black', shrink=0.01))
+ax1.set_xlabel('')
+ax1.set_xticklabels([])
+ax1.set_ylabel('MSE', rotation = '90',ha = 'right')
+ax1.yaxis.set_major_locator(plt.MultipleLocator(0.05)) #设置y轴坐标间隔为0.1
+
+ax2=plt.subplot(2,1,2)
+from sklearn.preprocessing import StandardScaler
+colNames = x.columns
+x_ = StandardScaler().fit_transform(x) #自变量标化
+x_ = pd.DataFrame(x_) #转为DataFrame格式
+x_.columns = colNames #重新赋予特征名称（列名）
+x_ = x_.astype(np.float64)
+coefs = model_LassoCV.path(x_, y, alphas = lambdas, cv = 10, max_iter = 1e5)[1].T
+#coefs_ = abs(coefs)
+ax2.semilogx(model_LassoCV.alphas_, coefs, '-')
+ax2.axvline(model_LassoCV.alpha_, color = 'black', ls = '--') #最佳lambda处作纵向虚线
+ax2.set_xlabel('Lambda (Best = %0.5f)' % model_LassoCV.alpha_)
+ax2.set_ylabel('Coefficients', rotation = '90',ha = 'right')
+
+plt.savefig(os.path.join(FilePath,'output','LASSO Lambda.png'), bbox_inches='tight') #保存图片
+plt.show()
+
