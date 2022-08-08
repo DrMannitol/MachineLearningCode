@@ -1,0 +1,51 @@
+# 数据包导入
+import pandas as pd
+import numpy as np
+import os
+import sklearn
+import scipy
+from lifelines.datasets import load_waltons
+from lifelines import KaplanMeierFitter
+from lifelines.utils import median_survival_times
+from sklearn.model_selection import learning_curve
+from sklearn.model_selection import ShuffleSplit
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import mean_squared_error
+import matplotlib.pyplot as plt
+
+kmf = KaplanMeierFitter()
+
+#导入按病例预后数据文件，显示数据基本信息
+FilePath = 'D:/Radiomics/ICH and pneumonia/AI5/'
+data = pd.read_excel(os.path.join(FilePath,'RISA-SAP-survival.xlsx'))
+print('数据特征：')
+print(data.info())
+data
+
+import  matplotlib.pyplot as plt
+groups = data['SAP']
+ix = (groups == 1)
+
+plt.figure(figsize=(6,4), dpi=200)
+ax = plt.subplot(1,1,1)
+
+kmf.fit(data['survival_time'][ix], data['death'][ix], label='With SAP')
+ax = kmf.plot()
+treatment_median_confidence_interval_ = median_survival_times(kmf.confidence_interval_)
+print("SAP患者存活50%对应的存活时间95%置信区间：'\n'", treatment_median_confidence_interval_, '\n')
+
+kmf.fit(data['survival_time'][~ix], data['death'][~ix], label='Without SAP')
+#共享一个画布
+ax = kmf.plot(ax=ax)
+
+ax.set_xlim([-3,65])
+ax.set_ylim([0.25,1.05])
+ax.set_xlabel("Post-stroke Timeline (m)",fontsize = 14)
+ax.set_ylabel("Survival Rate",fontsize = 14)
+ax.set_title("K-M Curves on SAP/Individual Survival",fontsize = 16)
+ax.grid()
+control_median_confidence_interval_ = median_survival_times(kmf.confidence_interval_)
+
+plt.show()
+
+plt.savefig(os.path.join(FilePath,'output','K-M curve.png'))
