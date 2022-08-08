@@ -1,0 +1,868 @@
+# 数据包导入
+import pandas as pd
+import numpy as np
+import os
+import sklearn
+import scipy
+
+#重置
+assdata = pd.DataFrame()
+#导入按病例预后数据文件，显示数据基本信息
+FilePath = 'D:/Radiomics/ICH and pneumonia/AI5/'
+data = pd.read_excel(os.path.join(FilePath,'output', 'LASSO variables.xlsx'))
+print('数据特征：')
+print(data.info())
+data
+
+y = pd.DataFrame()
+x_ = pd.DataFrame()
+y = data['SAP']
+x_ = data.iloc[:,2:] #选取自变量
+x = x_
+
+import random #随机模块
+random_seed = random.randint(0,10000001) #随机种子
+ 
+seed = random_seed       #设置随机种子
+print('随机种子：', seed)
+#导入训练-测试集分割模块
+from sklearn.model_selection import train_test_split
+x_train, x_test, y_train, y_test = train_test_split(x_, y, test_size = 0.3, shuffle = True, 
+                                                    random_state=seed
+                                                   )
+#测试集占总集合的30%，或为整数（测试集数量） 
+
+#学习集、验证集计数
+n_train = len(y_train)
+n_test = len(y_test)
+print(n_train,n_test)
+
+y1,y2,y3,y4 = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+y1 = y_train.loc[train['SAP'] == 1]
+y2 = y_train.loc[train['SAP'] == 0]
+y3 = y_test.loc[test['SAP'] == 1]
+y4 = y_test.loc[test['SAP'] == 0]
+df = pd.DataFrame([[len(y1),len(y3)],[len(y2),len(y4)]], index = ['肺炎', '非肺炎'], columns = ['训练集', '测试集'])
+print(df)
+
+import math
+#定义开方函数
+def sqrt(m):
+    value = math.sqrt(m)
+    return value
+#定义95%置信区间计算公式
+def interval(n1,n2):
+    value = 1.96 * sqrt((n1 * (1 - n1))/n2)
+    #value = value.astype(np.float64)
+    return value
+def interval_range(n1,n2):
+    range_string = str('('+"%.3f" % (n1 - interval(n1,n2))+','+"%.3f" % (n1 + interval(n1,n2))+')')
+    return range_string
+    
+    from sklearn.metrics import confusion_matrix,accuracy_score,f1_score,roc_auc_score,recall_score,precision_score
+def sensitivity_metric(gt, pred): 
+    pred[pred>0.5]=1
+    pred[pred<1]=0
+    confusion = confusion_matrix(gt,pred)
+    TP = confusion[1, 1]
+    TN = confusion[0, 0]
+    FP = confusion[0, 1]
+    FN = confusion[1, 0]
+    sensitivity = TP / float(TP+FN)
+    return sensitivity
+ 
+#    print('准确度:',(TP+TN)/float(TP+TN+FP+FN))
+#    print('灵敏度:',TP / float(TP+FN))
+#    print('特异度:',TN / float(TN+FP)) 
+def specificity_metric(gt, pred): 
+    pred[pred>0.5]=1
+    pred[pred<1]=0
+    confusion = confusion_matrix(gt,pred)
+    TP = confusion[1, 1]
+    TN = confusion[0, 0]
+    FP = confusion[0, 1]
+    FN = confusion[1, 0]
+    specificity = TN / float(TN+FP)
+    return specificity
+#    print('准确度:',(TP+TN)/float(TP+TN+FP+FN))
+#    print('灵敏度:',TP / float(TP+FN))
+#    print('特异度:',TN / float(TN+FP)) 
+
+from sklearn.model_selection import learning_curve
+from sklearn.model_selection import ShuffleSplit
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import mean_squared_error
+import matplotlib.pyplot as plt
+#定义绘制学习曲线的函数
+def plot_learning_curve(estimator, title, x_train, x_test, y_train, y_test, ax):
+    train_score = []
+    test_score = []
+    n3 =  20  #起始训练数
+    for i in range(n3, len(x_train),int(len(x_train)/5)):
+        estimator.fit(x_train.iloc[:i], y_train.iloc[:i])
+        y_train_pre = estimator.predict(x_train.iloc[:i])
+        y_test_pre = estimator.predict(x_test)
+        train_score.append(accuracy_score(y_train_pre, y_train.iloc[:i]))
+        test_score.append(accuracy_score(y_test_pre, y_test))
+        train_score_std = np.std(train_score)
+        test_score_std = np.std(test_score)
+    
+    #ax.set_axis([-10,600,0.45,1.05])
+    ax.set_xlim([10,210])
+    ax.xaxis.set_major_locator(plt.MultipleLocator(40)) 
+    ax.set_ylim([0.55,1.05])
+    #ax.set_xlabel("Training Example Size")
+    #ax.set_ylabel("Model Accuracy")
+    #ax.set_title("Learning Curve ("+title+")")
+    lw=2
+    ax.plot([i for i in range(n3, len(x_train), int(len(x_train)/5))], train_score, 
+             marker = 'o', markersize = 3, linestyle='--', lw = lw, c = "r", label="Training Cohort")
+    ax.plot([i for i in range(n3, len(x_train), int(len(x_train)/5))], test_score, 
+             marker = 'o', markersize = 3, linestyle='--', lw = lw, c = "blue", label="Testing Cohort")
+    ax.fill_between([i for i in range(n3, len(x_train), int(len(x_train)/5))],
+                     train_score - train_score_std, train_score + train_score_std,
+                     alpha=0.1, color="r")
+    ax.fill_between([i for i in range(n3, len(x_train), int(len(x_train)/5))],
+                     test_score - test_score_std, test_score + test_score_std, 
+                     alpha=0.1, color="blue")
+    ax.grid()
+    ax.legend()
+    
+    return ax
+    
+from sklearn.metrics import recall_score, f1_score, roc_curve, auc, roc_auc_score
+from sklearn.model_selection import GridSearchCV
+from sklearn.utils.multiclass import unique_labels
+import matplotlib.pyplot as plt
+from sklearn.metrics import classification_report, confusion_matrix
+assdata = pd.DataFrame()
+
+from sklearn.linear_model import LogisticRegression
+print('使用普通训练集训练')
+#拟合Logistic回归模型
+model_log = LogisticRegression(max_iter=5000)
+model_log.fit(x_train,y_train)
+
+#对测试集做预测
+print("训练集准确率：",model_log.score(x_train, y_train))
+acc_log = model_log.score(x_test, y_test)
+y_probs = model_log.predict_proba(x_test)
+#print(y_probs) #显示预测两个分类的变量的各自概率
+y_pre_log = model_log.predict(x_test)#机器分类结果
+y_array_log = y_test.values#dataframe转化为array格式
+sen_log = sensitivity_metric(y_array_log, y_pre_log)
+spe_log = specificity_metric(y_array_log, y_pre_log)
+fpr_log, tpr_log, thresholds_log = roc_curve(y_test, y_probs[:,1], pos_label =1)
+auc_log = auc(fpr_log, tpr_log)
+print('---')
+interval_acc_value = interval(acc_log, n_test)
+interval_acc_log = interval_range(acc_log, n_test)
+interval_sen_value = interval(sen_log, n_test)
+interval_sen_log = interval_range(sen_log, n_test)
+interval_spe_value = interval(spe_log, n_test)
+interval_spe_log = interval_range(spe_log, n_test)
+interval_auc_value = interval(auc_log, n_test)
+interval_auc_log = interval_range(auc_log, n_test)
+ 
+print('分类预测结果评估：')
+print(classification_report(y_array_log,y_pre_log))
+#Recall即召回率，灵敏度，真阳性率（TPR）
+#accuracy预测准确率，macro avg宏平均，weighted avg加权平均
+print('混淆矩阵：')
+print(confusion_matrix(y_array_log,y_pre_log))
+print('---')
+print('Logistic回归分类器（验证集）\n准确率：%0.4f' % acc_log, interval_acc_log,
+      '；\n灵敏度：%0.4f' % sen_log, interval_sen_log,
+      '；\n特异度：%0.4f' % spe_log, interval_spe_log,
+      '；\nAUC值：%0.4f' % auc_log, interval_auc_log
+     )
+assdata_dict = {'seed':seed,
+                'alg_name':'logistic',
+                'accuracy': "%.3f" % acc_log,
+                'accuracy_interval': interval_acc_log,
+                'sensitivity_value': "%.3f" % sen_log,
+                'sensitivity_interval': interval_sen_log,
+                'specificity_value': "%.3f" % spe_log,
+                'specificity_interval': interval_spe_log,
+                'auc_value': "%.3f" % auc_log,
+                'auc_interval': interval_auc_log
+               }
+assdata = assdata.append(assdata_dict, ignore_index=True)
+
+from sklearn.naive_bayes import GaussianNB
+print('使用普通训练集训练')
+#拟合朴素贝叶斯模型
+model_gnb = GaussianNB()
+model_gnb.fit(x_train,y_train)
+
+#对测试集做预测
+print("训练集准确率：",model_gnb.score(x_train, y_train))
+acc_gnb = model_gnb.score(x_test, y_test)
+y_probs = model_gnb.predict_proba(x_test)
+#print(y_probs) #显示预测两个分类的变量的各自概率
+y_pre_gnb = model_gnb.predict(x_test)#机器分类结果
+y_array_gnb = y_test.values#dataframe转化为array格式
+sen_gnb = sensitivity_metric(y_array_gnb, y_pre_gnb)
+spe_gnb = specificity_metric(y_array_gnb, y_pre_gnb)
+ 
+fpr_gnb, tpr_gnb, thresholds_gnb = roc_curve(y_test, y_probs[:,1], pos_label =1)
+auc_gnb = auc(fpr_gnb, tpr_gnb)
+print('---')
+interval_acc_value = interval(acc_gnb, n_test)
+interval_acc_gnb = interval_range(acc_gnb, n_test)
+interval_sen_value = interval(sen_gnb, n_test)
+interval_sen_gnb = interval_range(sen_gnb, n_test)
+interval_spe_value = interval(spe_gnb, n_test)
+interval_spe_gnb = interval_range(spe_gnb, n_test)
+interval_auc_value = interval(auc_gnb, n_test)
+interval_auc_gnb = interval_range(auc_gnb, n_test)
+ 
+print('分类预测结果评估：')
+print(classification_report(y_array_gnb,y_pre_gnb))
+#Recall即召回率，灵敏度，真阳性率（TPR）
+#accuracy预测准确率，macro avg宏平均，weighted avg加权平均
+print('混淆矩阵：')
+print(confusion_matrix(y_array_gnb,y_pre_gnb))
+print('---')
+print('朴素贝叶斯分类器（验证集）\n准确率：%0.4f' % acc_gnb, interval_acc_gnb,
+      '；\n灵敏度：%0.4f' % sen_gnb, interval_sen_gnb,
+      '；\n特异度：%0.4f' % spe_gnb, interval_spe_gnb,
+      '；\nAUC值：%0.4f' % auc_gnb, interval_auc_gnb
+     )
+assdata_dict = {'seed':seed,
+                'alg_name':'GNB',
+                'accuracy': "%.3f" % acc_gnb,
+                'accuracy_interval': interval_acc_gnb,
+                'sensitivity_value': "%.3f" % sen_gnb,
+                'sensitivity_interval': interval_sen_gnb,
+                'specificity_value': "%.3f" % spe_gnb,
+                'specificity_interval': interval_spe_gnb,
+                'auc_value': "%.3f" % auc_gnb,
+                'auc_interval': interval_auc_gnb
+               }
+assdata = assdata.append(assdata_dict, ignore_index=True)
+
+from sklearn.ensemble import RandomForestClassifier
+ 
+#网格调参
+#主要调参对象是n_estimators决策树数目(最佳的弱学习器迭代次数)
+params1 = {'n_estimators':range(10,71,10)}
+grid1 = GridSearchCV(estimator = RandomForestClassifier(min_samples_split=100,
+                                                        min_samples_leaf=20, max_depth=8, max_features='sqrt', random_state=10),
+                     param_grid =params1, scoring='roc_auc', cv=5)
+grid1.fit(x_train, y_train)
+print(grid1.best_params_,grid1.best_score_)
+n_estimators = grid1.best_params_['n_estimators']
+ 
+#对决策树最大深度max_depth和内部节点再划分所需最小样本数min_samples_split进行网格搜索
+params2 = {'max_depth':range(3,14,2), 'min_samples_split':range(50,201,20)}
+grid2 = GridSearchCV(estimator = RandomForestClassifier(n_estimators = grid1.best_params_['n_estimators'],
+                                                        min_samples_leaf = 20, max_features='sqrt', oob_score=True,random_state=10),
+                     param_grid = params2, scoring='roc_auc', cv=5)
+grid2.fit(x_train, y_train)
+print(grid2.best_params_,grid2.best_score_)
+max_depth = grid2.best_params_['max_depth']
+min_samples_split = grid2.best_params_['min_samples_split']
+ 
+#再对内部节点再划分所需最小样本数min_samples_split和叶子节点最少样本数min_samples_leaf一起调参
+params3 = {'min_samples_split':range(80,150,20), 'min_samples_leaf':range(10,60,10)}
+grid3 = GridSearchCV(estimator = RandomForestClassifier(n_estimators = grid1.best_params_['n_estimators'],
+                                                        max_depth = grid2.best_params_['max_depth'],
+                                                        min_samples_split = grid2.best_params_['min_samples_split'],
+                                                        max_features ='sqrt' ,oob_score=True, random_state=10),
+                     param_grid = params3, scoring='roc_auc', cv=5)
+grid3.fit(x_train, y_train)
+print(grid3.best_params_,grid3.best_score_)
+min_samples_split = grid3.best_params_['min_samples_split']
+min_samples_leaf = grid3.best_params_['min_samples_leaf']
+ 
+#最后我们再对最大特征数max_features做调参:
+params4 = {'max_features':range(3,11,2)}
+grid4 = GridSearchCV(estimator = RandomForestClassifier(n_estimators = grid1.best_params_['n_estimators'],
+                                                        max_depth = grid2.best_params_['max_depth'],
+                                                        min_samples_split = grid2.best_params_['min_samples_split'],
+                                                        min_samples_leaf = grid3.best_params_['min_samples_leaf'],
+                                                        oob_score=True, random_state=10),
+                     param_grid = params4, scoring='roc_auc', cv=5)
+grid4.fit(x_train, y_train)
+print(grid4.best_params_,grid4.best_score_)
+max_features = grid4.best_params_['max_features']
+ 
+ 
+model_rf = RandomForestClassifier(n_estimators = grid1.best_params_['n_estimators'],
+                                  max_depth = grid2.best_params_['max_depth'],
+                                  min_samples_split = grid2.best_params_['min_samples_split'],
+                                  min_samples_leaf = grid3.best_params_['min_samples_leaf'], 
+                                  max_features = grid4.best_params_['max_features'],
+                                  class_weight=None, 
+                                  criterion='gini', oob_score = True, bootstrap=True)
+model_rf.fit(x_train, y_train)
+ 
+print('最佳参数：', 
+      'n_estimators = ',grid1.best_params_['n_estimators'], 
+      ',max_depth = ', grid2.best_params_['max_depth'], 
+      ',min_samples_split = ', grid2.best_params_['min_samples_split'], 
+      ',min_samples_leaf = ', grid3.best_params_['min_samples_leaf'], 
+      ',max_features = ', grid4.best_params_['max_features'])
+ 
+print('袋外分数：%f' % model_rf.oob_score_)
+print('---')
+print('训练集准确率：%f' % model_rf.score(x_train, y_train))
+print('验证集准确率：%f' % model_rf.score(x_test, y_test))
+
+#对测试集做预测
+print("训练集准确率：",model_rf.score(x_train, y_train))
+acc_rf = model_rf.score(x_test, y_test)
+y_probs = model_rf.predict_proba(x_test)
+#print(y_probs) #显示预测两个分类的变量的各自概率
+y_pre_rf = model_rf.predict(x_test)#机器分类结果
+y_array_rf = y_test.values#dataframe转化为array格式
+sen_rf = sensitivity_metric(y_array_rf, y_pre_rf)
+spe_rf = specificity_metric(y_array_rf, y_pre_rf)
+ 
+fpr_rf, tpr_rf, thresholds_rf = roc_curve(y_test, y_probs[:,1], pos_label =1)
+auc_rf = auc(fpr_rf, tpr_rf)
+print('---')
+interval_acc_value = interval(acc_rf, n_test)
+interval_acc_rf = interval_range(acc_rf, n_test)
+interval_sen_value = interval(sen_rf, n_test)
+interval_sen_rf = interval_range(sen_rf, n_test)
+interval_spe_value = interval(spe_rf, n_test)
+interval_spe_rf = interval_range(spe_rf, n_test)
+interval_auc_value = interval(auc_rf, n_test)
+interval_auc_rf = interval_range(auc_rf, n_test)
+ 
+print('分类预测结果评估：')
+print(classification_report(y_array_rf,y_pre_rf))
+#Recall即召回率，灵敏度，真阳性率（TPR）
+#accuracy预测准确率，macro avg宏平均，weighted avg加权平均
+print('混淆矩阵：')
+print(confusion_matrix(y_array_rf,y_pre_rf))
+print('---')
+print('随机森林分类器（验证集）\n准确率：%0.4f' % acc_rf, interval_acc_rf,
+      '；\n灵敏度：%0.4f' % sen_rf, interval_sen_rf,
+      '；\n特异度：%0.4f' % spe_rf, interval_spe_rf,
+      '；\nAUC值：%0.4f' % auc_rf, interval_auc_rf
+     )
+assdata_dict = {'seed':seed,
+                'alg_name':'RF',
+                'accuracy': "%.3f" % acc_rf,
+                'accuracy_interval': interval_acc_rf,
+                'sensitivity_value': "%.3f" % sen_rf,
+                'sensitivity_interval': interval_sen_rf,
+                'specificity_value': "%.3f" % spe_rf,
+                'specificity_interval': interval_spe_rf,
+                'auc_value': "%.3f" % auc_rf,
+                'auc_interval': interval_auc_rf
+               }
+assdata = assdata.append(assdata_dict, ignore_index=True)
+
+from sklearn.neighbors import KNeighborsClassifier
+ 
+print('使用均等权重参数进行分类器训练')
+ks = np.arange(1,22)
+ps = np.arange(1,7)
+param_grid = dict(n_neighbors = ks, p = ps)
+#网格化搜索
+grid_uni = GridSearchCV(KNeighborsClassifier(algorithm='auto', weights='uniform'), 
+                        param_grid = param_grid, cv = 5)
+#auto为自动选择算法，cv为k折交叉验证（None默认三折验证），param_grid为需要最优化的参数的取值
+grid_uni.fit(x_train, y_train)
+print('最优化参数取值（均等权重）：')
+print(grid_uni.best_params_)
+k = grid_uni.best_params_['n_neighbors']
+p = grid_uni.best_params_['p']
+ 
+#设置knn分类器
+model_knn_uni = KNeighborsClassifier(n_neighbors=k, p=p, algorithm='auto', weights='uniform')
+#进行训练
+model_knn_uni.fit(x_train, y_train)
+ 
+#使用训练好的knn进行数据预测
+print("训练集准确率（均等权重）：",model_knn_uni.score(x_train, y_train))
+print("验证集准确率（均等权重）：",model_knn_uni.score(x_test, y_test))
+y_probs = model_knn_uni.predict_proba(x_test)
+fpr_knn_uni, tpr_knn_uni, thresholds_knn_uni = roc_curve(y_test, y_probs[:,1], pos_label =1)
+auc_knn_uni = auc(fpr_knn_uni, tpr_knn_uni)
+print('K近邻AUC值（均等权重）：',auc_knn_uni)
+print('---')
+ 
+print('使用不均权重参数进行分类器训练')
+grid_dis = GridSearchCV(KNeighborsClassifier(algorithm='auto', weights='distance'), 
+                        param_grid = param_grid, cv = 5)
+grid_dis.fit(x_train, y_train)
+print('最优化参数取值（不均权重）：')
+print(grid_dis.best_params_)
+k = grid_dis.best_params_['n_neighbors']
+p = grid_dis.best_params_['p']
+model_knn_dis = KNeighborsClassifier(n_neighbors=k, p=p, algorithm='auto', weights='distance')
+model_knn_dis.fit(x_train, y_train)
+print("训练集准确率（不均权重）：",model_knn_dis.score(x_train, y_train))
+print("验证集准确率（不均权重）：",model_knn_dis.score(x_test, y_test))
+y_probs = model_knn_dis.predict_proba(x_test)
+fpr_knn_dis, tpr_knn_dis, thresholds_knn_dis = roc_curve(y_test, y_probs[:,1], pos_label =1)
+auc_knn_dis = auc(fpr_knn_dis, tpr_knn_dis)
+print('K近邻AUC值（不均权重imbalanced）：',auc_knn_dis)
+
+#选择KNN距离权重方式
+if auc_knn_uni>auc_knn_dis:
+    print('选择均等权重（uniform）作为参数（具有更优异分类效果）')
+    model_knn=model_knn_uni
+    auc_knn = auc_knn_uni
+    
+elif auc_knn_uni<=auc_knn_dis:
+    print('选择不均权重（distance）作为参数（具有更优异分类效果）')
+    model_knn=model_knn_dis
+    fpr_knn, tpr_knn, thresholds_knn = fpr_knn_dis, tpr_knn_dis, thresholds_knn_dis
+    auc_knn = auc_knn_dis
+    
+#对测试集做预测
+print("训练集准确率：",model_knn.score(x_train, y_train))
+acc_knn = model_knn.score(x_test, y_test)
+y_probs = model_knn.predict_proba(x_test)
+#print(y_probs) #显示预测两个分类的变量的各自概率
+y_pre_knn = model_knn.predict(x_test)#机器分类结果
+y_array_knn = y_test.values#dataframe转化为array格式
+sen_knn = sensitivity_metric(y_array_knn, y_pre_knn)
+spe_knn = specificity_metric(y_array_knn, y_pre_knn)
+ 
+fpr_knn, tpr_knn, thresholds_knn = roc_curve(y_test, y_probs[:,1], pos_label =1)
+auc_knn = auc(fpr_knn, tpr_knn)
+print('---')
+interval_acc_value = interval(acc_knn, n_test)
+interval_acc_knn = interval_range(acc_knn, n_test)
+interval_sen_value = interval(sen_knn, n_test)
+interval_sen_knn = interval_range(sen_knn, n_test)
+interval_spe_value = interval(spe_knn, n_test)
+interval_spe_knn = interval_range(spe_knn, n_test)
+interval_auc_value = interval(auc_knn, n_test)
+interval_auc_knn = interval_range(auc_knn, n_test)
+ 
+print('分类预测结果评估：')
+print(classification_report(y_array_knn,y_pre_knn))
+#Recall即召回率，灵敏度，真阳性率（TPR）
+#accuracy预测准确率，macro avg宏平均，weighted avg加权平均
+print('混淆矩阵：')
+print(confusion_matrix(y_array_knn,y_pre_knn))
+print('---')
+print('随机森林分类器（验证集）\n准确率：%0.4f' % acc_knn, interval_acc_knn,
+      '；\n灵敏度：%0.4f' % sen_knn, interval_sen_knn,
+      '；\n特异度：%0.4f' % spe_knn, interval_spe_knn,
+      '；\nAUC值：%0.4f' % auc_knn, interval_auc_knn
+     )
+assdata_dict = {'seed':seed,
+                'alg_name':'KNN',
+                'accuracy': "%.3f" % acc_knn,
+                'accuracy_interval': interval_acc_knn,
+                'sensitivity_value': "%.3f" % sen_knn,
+                'sensitivity_interval': interval_sen_knn,
+                'specificity_value': "%.3f" % spe_knn,
+                'specificity_interval': interval_spe_knn,
+                'auc_value': "%.3f" % auc_knn,
+                'auc_interval': interval_auc_knn
+               }
+assdata = assdata.append(assdata_dict, ignore_index=True)
+
+from sklearn import svm
+ 
+gammas = np.logspace(-4,1,50,base = 2)
+Cs = np.logspace(-1,3,10,base = 2)
+param_grid = dict(gamma = gammas, C = Cs)
+grid = GridSearchCV(svm.SVC(kernel = 'rbf'), param_grid = param_grid, cv = 5)
+#kernel为核函数，cv为k折交叉验证（None默认三折验证），param_grid为需要最优化的参数的取值
+grid.fit(x_train, y_train)
+print('选取的最优化参数取值：')
+print(grid.best_params_)
+gamma = grid.best_params_['gamma']
+C = grid.best_params_['C']
+print('---')
+model_svm = svm.SVC(kernel = 'rbf', gamma = gamma, C = C, probability = True)
+model_svm.fit(x_train, y_train)
+
+#对测试集做预测
+print("训练集准确率：",model_svm.score(x_train, y_train))
+acc_svm = model_svm.score(x_test, y_test)
+y_probs = model_svm.predict_proba(x_test)
+#print(y_probs) #显示预测两个分类的变量的各自概率
+y_pre_svm = model_svm.predict(x_test)#机器分类结果
+y_array_svm = y_test.values#dataframe转化为array格式
+sen_svm = sensitivity_metric(y_array_svm, y_pre_svm)
+spe_svm = specificity_metric(y_array_svm, y_pre_svm)
+ 
+fpr_svm, tpr_svm, thresholds_svm = roc_curve(y_test, y_probs[:,1], pos_label =1)
+auc_svm = auc(fpr_svm, tpr_svm)
+print('---')
+interval_acc_value = interval(acc_svm, n_test)
+interval_acc_svm = interval_range(acc_svm, n_test)
+interval_sen_value = interval(sen_svm, n_test)
+interval_sen_svm = interval_range(sen_svm, n_test)
+interval_spe_value = interval(spe_svm, n_test)
+interval_spe_svm = interval_range(spe_svm, n_test)
+interval_auc_value = interval(auc_svm, n_test)
+interval_auc_svm = interval_range(auc_svm, n_test)
+ 
+print('分类预测结果评估：')
+print(classification_report(y_array_svm,y_pre_svm))
+#Recall即召回率，灵敏度，真阳性率（TPR）
+#accuracy预测准确率，macro avg宏平均，weighted avg加权平均
+print('混淆矩阵：')
+print(confusion_matrix(y_array_svm,y_pre_svm))
+print('---')
+print('支持向量机分类器（验证集）\n准确率：%0.4f' % acc_svm, interval_acc_svm,
+      '；\n灵敏度：%0.4f' % sen_svm, interval_sen_svm,
+      '；\n特异度：%0.4f' % spe_svm, interval_spe_svm,
+      '；\nAUC值：%0.4f' % auc_svm, interval_auc_svm
+     )
+assdata_dict = {'seed':seed,
+                'alg_name':'SVM',
+                'accuracy': "%.3f" % acc_svm,
+                'accuracy_interval': interval_acc_svm,
+                'sensitivity_value': "%.3f" % sen_svm,
+                'sensitivity_interval': interval_sen_svm,
+                'specificity_value': "%.3f" % spe_svm,
+                'specificity_interval': interval_spe_svm,
+                'auc_value': "%.3f" % auc_svm,
+                'auc_interval': interval_auc_svm
+               }
+assdata = assdata.append(assdata_dict, ignore_index=True)
+
+import xgboost as xgb
+from xgboost.sklearn import XGBClassifier
+ 
+params1 = { 'max_depth':range(3,11,1), 
+           'min_child_weight':range(11,31,2)}
+grid1 = GridSearchCV(estimator = XGBClassifier(learning_rate =0.1, 
+                                               n_estimators=140, 
+                                               gamma=0, 
+                                               subsample=0.8,
+                                               colsample_bytree=0.8,
+                                               nthread=4,
+                                               scale_pos_weight=1), 
+                     param_grid = params1,
+                     scoring='roc_auc',
+                     n_jobs=4,
+                     cv=5)
+grid1.fit(x_train, y_train)
+print(grid1.best_params_, grid1.best_score_)
+max_depth = grid1.best_params_['max_depth']
+min_child_weight = grid1.best_params_['min_child_weight']
+print('---')
+ 
+params2 = {'min_child_weight':range(min_child_weight-2,min_child_weight+2,1)}
+grid2 = GridSearchCV(estimator = XGBClassifier(learning_rate =0.1, 
+                                               n_estimators=140, 
+                                               max_depth=max_depth,
+                                               min_child_weight=min_child_weight, 
+                                               gamma=0, 
+                                               subsample=0.8,
+                                               colsample_bytree=0.8,
+                                               nthread=4,
+                                               scale_pos_weight=1), 
+                     param_grid = params2,
+                     scoring='roc_auc',
+                     n_jobs=4,
+                     cv=5)
+grid2.fit(x_train, y_train)
+print(grid2.best_params_, grid2.best_score_)
+min_child_weight = grid2.best_params_['min_child_weight']
+print('---')
+ 
+params3 = {'gamma':[i/10.0 for i in range(0,5)]}
+grid3 = GridSearchCV(estimator = XGBClassifier(learning_rate =0.1, 
+                                               n_estimators=140, 
+                                               max_depth=max_depth,
+                                               min_child_weight=min_child_weight, 
+                                               subsample=0.8, 
+                                               colsample_bytree=0.8, 
+                                               nthread=4, 
+                                               scale_pos_weight=1), 
+                     param_grid = params3, 
+                     scoring='roc_auc',
+                     n_jobs=4,
+                     cv=5)
+grid3.fit(x_train, y_train)
+print(grid3.best_params_, grid3.best_score_)
+gamma = grid3.best_params_['gamma']
+print('---')
+ 
+params4 = {'subsample':[i/100.0 for i in range(60,100,5)], 
+           'colsample_bytree':[i/100.0 for i in range(60,100,5)]}
+grid4 = GridSearchCV(estimator = XGBClassifier(learning_rate =0.1, 
+                                               n_estimators=140, 
+                                               max_depth=max_depth,
+                                               min_child_weight=min_child_weight,
+                                               gamma=gamma, 
+                                               nthread=4, 
+                                               scale_pos_weight=1), 
+                     param_grid = params4, 
+                     scoring='roc_auc',
+                     n_jobs=4,
+                     cv=5)
+grid4.fit(x_train, y_train)
+print(grid4.best_params_, grid4.best_score_)
+subsample = grid4.best_params_['subsample']
+colsample_bytree = grid4.best_params_['colsample_bytree']
+print('---')
+ 
+params5 = {'reg_alpha':[0, 0.001, 0.005, 0.01, 0.05]}
+grid5 = GridSearchCV(estimator = XGBClassifier(learning_rate =0.1,
+                                                  n_estimators=140, 
+                                                  max_depth=max_depth,
+                                                  min_child_weight=min_child_weight,
+                                                  gamma=gamma,
+                                                  subsample=subsample,
+                                                  colsample_bytree=colsample_bytree,
+                                                  nthread=4,
+                                                  scale_pos_weight=1), 
+                        param_grid = params5, 
+                        scoring='roc_auc',
+                        n_jobs=4, 
+                        cv=5)
+grid5.fit(x_train, y_train)
+print(grid5.best_params_, grid5.best_score_)
+reg_alpha = grid5.best_params_['reg_alpha']
+print('---')
+ 
+model_xgb = XGBClassifier(learning_rate =0.1, 
+                          n_estimators=140, 
+                          max_depth=max_depth,
+                          min_child_weight=min_child_weight,
+                          gamma=gamma, 
+                          subsample=subsample,
+                          colsample_bytree=colsample_bytree,
+                          reg_alpha=reg_alpha,
+                          nthread=4, 
+                          scale_pos_weight=1)
+model_xgb.fit(x_train, y_train)
+ 
+print('最佳参数：', 
+      'max_depth = ',grid1.best_params_['max_depth'], 
+      ',min_child_weight = ', grid2.best_params_['min_child_weight'], 
+      ',gamma = ', grid3.best_params_['gamma'], 
+      ',subsample = ', grid4.best_params_['subsample'], 
+      ',colsample_bytree = ', grid4.best_params_['colsample_bytree'],
+      ',reg_alpha = ',grid5.best_params_['reg_alpha'])
+ 
+print('---')
+
+#对测试集做预测
+print("训练集准确率：",model_xgb.score(x_train, y_train))
+acc_xgb = model_xgb.score(x_test, y_test)
+y_probs = model_xgb.predict_proba(x_test)
+#print(y_probs) #显示预测两个分类的变量的各自概率
+y_pre_xgb = model_xgb.predict(x_test)#机器分类结果
+y_array_xgb = y_test.values#dataframe转化为array格式
+sen_xgb = sensitivity_metric(y_array_xgb, y_pre_xgb)
+spe_xgb = specificity_metric(y_array_xgb, y_pre_xgb)
+ 
+fpr_xgb, tpr_xgb, thresholds_xgb = roc_curve(y_test, y_probs[:,1], pos_label =1)
+auc_xgb = auc(fpr_xgb, tpr_xgb)
+print('---')
+interval_acc_value = interval(acc_xgb, n_test)
+interval_acc_xgb = interval_range(acc_xgb, n_test)
+interval_sen_value = interval(sen_xgb, n_test)
+interval_sen_xgb = interval_range(sen_xgb, n_test)
+interval_spe_value = interval(spe_xgb, n_test)
+interval_spe_xgb = interval_range(spe_xgb, n_test)
+interval_auc_value = interval(auc_xgb, n_test)
+interval_auc_xgb = interval_range(auc_xgb, n_test)
+ 
+print('分类预测结果评估：')
+print(classification_report(y_array_xgb,y_pre_xgb))
+#Recall即召回率，灵敏度，真阳性率（TPR）
+#accuracy预测准确率，macro avg宏平均，weighted avg加权平均
+print('混淆矩阵：')
+print(confusion_matrix(y_array_xgb,y_pre_xgb))
+print('---')
+print('XGBoost分类器（验证集）\n准确率：%0.4f' % acc_xgb, interval_acc_xgb,
+      '；\n灵敏度：%0.4f' % sen_xgb, interval_sen_xgb,
+      '；\n特异度：%0.4f' % spe_xgb, interval_spe_xgb,
+      '；\nAUC值：%0.4f' % auc_xgb, interval_auc_xgb
+     )
+assdata_dict = {'seed':seed,
+                'alg_name':'XGB',
+                'accuracy': "%.3f" % acc_xgb,
+                'accuracy_interval': interval_acc_xgb,
+                'sensitivity_value': "%.3f" % sen_xgb,
+                'sensitivity_interval': interval_sen_xgb,
+                'specificity_value': "%.3f" % spe_xgb,
+                'specificity_interval': interval_spe_xgb,
+                'auc_value': "%.3f" % auc_xgb,
+                'auc_interval': interval_auc_xgb
+               }
+assdata = assdata.append(assdata_dict, ignore_index=True)
+
+from sklearn.ensemble import VotingClassifier
+ 
+model_vot = VotingClassifier(estimators = [
+                            ('model_log',model_log),
+                            ('model_gnb',model_gnb),
+                            ('model_rf',model_rf),
+                            ('model_knn',model_knn),
+                            ('model_svm',model_svm),
+                            ('model_xgb',model_xgb)], voting='soft')
+                             
+model_vot.fit(x_train, y_train)
+
+#对测试集做预测
+print("训练集准确率：",model_vot.score(x_train, y_train))
+acc_vot = model_vot.score(x_test, y_test)
+y_probs = model_vot.predict_proba(x_test)
+#print(y_probs) #显示预测两个分类的变量的各自概率
+y_pre_vot = model_vot.predict(x_test)#机器分类结果
+y_array_vot = y_test.values#dataframe转化为array格式
+sen_vot = sensitivity_metric(y_array_vot, y_pre_vot)
+spe_vot = specificity_metric(y_array_vot, y_pre_vot)
+ 
+fpr_vot, tpr_vot, thresholds_vot = roc_curve(y_test, y_probs[:,1], pos_label =1)
+auc_vot = auc(fpr_vot, tpr_vot)
+print('---')
+interval_acc_value = interval(acc_vot, n_test)
+interval_acc_vot = interval_range(acc_vot, n_test)
+interval_sen_value = interval(sen_vot, n_test)
+interval_sen_vot = interval_range(sen_vot, n_test)
+interval_spe_value = interval(spe_vot, n_test)
+interval_spe_vot = interval_range(spe_vot, n_test)
+interval_auc_value = interval(auc_vot, n_test)
+interval_auc_vot = interval_range(auc_vot, n_test)
+ 
+print('分类预测结果评估：')
+print(classification_report(y_array_vot,y_pre_vot))
+#Recall即召回率，灵敏度，真阳性率（TPR）
+#accuracy预测准确率，macro avg宏平均，weighted avg加权平均
+print('混淆矩阵：')
+print(confusion_matrix(y_array_vot,y_pre_vot))
+print('---')
+print('ESVM分类器（验证集）\n准确率：%0.4f' % acc_vot, interval_acc_vot,
+      '；\n灵敏度：%0.4f' % sen_vot, interval_sen_vot,
+      '；\n特异度：%0.4f' % spe_vot, interval_spe_vot,
+      '；\nAUC值：%0.4f' % auc_vot, interval_auc_vot
+     )
+assdata_dict = {'seed':seed,
+                'alg_name':'ESVM',
+                'accuracy': "%.3f" % acc_vot,
+                'accuracy_interval': interval_acc_vot,
+                'sensitivity_value': "%.3f" % sen_vot,
+                'sensitivity_interval': interval_sen_vot,
+                'specificity_value': "%.3f" % spe_vot,
+                'specificity_interval': interval_spe_vot,
+                'auc_value': "%.3f" % auc_vot,
+                'auc_interval': interval_auc_vot
+               }
+assdata = assdata.append(assdata_dict, ignore_index=True)
+
+import os
+def mkdir(path):
+    folder = os.path.exists(path)
+    if not folder:                   #判断是否存在文件夹如果不存在则创建为文件夹
+        os.makedirs(path)            #makedirs 创建文件时如果路径不存在会创建这个路径
+        print('已创建新文件夹')
+    else:
+        print('已存在该文件夹')
+mkdir(os.path.join(FilePath,'output',str(seed)))             #调用函数
+
+import matplotlib.pyplot as plt
+lw = 2
+plt.figure(figsize=(7,7),dpi = 300)
+ 
+plt.plot(fpr_log, tpr_log, color='brown',
+         lw=lw, label='LR Classifier (area = %0.3f)' % auc_log) ###假正率为横坐标，真正率为纵坐标做曲线
+plt.plot(fpr_gnb, tpr_gnb, color='red',
+         lw=lw, label='GNB Classifier (area = %0.3f)' % auc_gnb)
+plt.plot(fpr_rf, tpr_rf, color='sandybrown',
+         lw=lw, label='RF Classifier (area = %0.3f)' % auc_rf) 
+plt.plot(fpr_knn, tpr_knn, color='orangered',
+         lw=lw, label='KNN Classifier (area = %0.3f)' % auc_knn)
+plt.plot(fpr_svm, tpr_svm, color='olive',
+         lw=lw, label='SVM Classifier (area = %0.3f)' % auc_svm) 
+ 
+plt.plot(fpr_xgb, tpr_xgb, color='seagreen',
+         lw=lw, label='XGB Classifier (area = %0.3f)' % auc_xgb)
+plt.plot(fpr_vot, tpr_vot, color='royalblue',
+         lw=lw, label='ESVM Classifier (area = %0.3f)' % auc_vot)
+ 
+plt.plot([0, 1], [0, 1], color='lightgrey', lw=lw, linestyle=(0,(3, 1, 1, 1, 1, 1)))
+plt.xlim([-0.01, 1.01])
+plt.ylim([-0.01, 1.01])
+plt.xlabel('False Positive Rate', fontsize = '12')
+plt.ylabel('True Positive Rate', fontsize = '12')
+plt.title('Receiver Operating Characteristic Curve\n(internal validation)', fontsize = '16')
+plt.legend(loc="lower right")
+plt.savefig(os.path.join(FilePath,'output','ROC '+str(seed)+'.png'))
+plt.savefig(os.path.join(FilePath,'output',str(seed),'ROC.png'))
+plt.show()
+print(seed)
+
+fig1 = plt.figure(figsize = (18,6),dpi=200)
+plt.xlabel('Training Example Size')
+plt.ylabel('Model Accuracy')
+ 
+plt.subplots_adjust(wspace=0.2 ,hspace=0.4)
+ 
+plt.suptitle('Learning Curve',fontsize = 16)
+titlesize = 14
+ 
+ax1 = plt.subplot(2,5,1)
+plot_learning_curve(model_log, 'Logistics', x_train, x_test, y_train, y_test, ax=ax1)
+ax1.set_title("Logistic", fontsize = titlesize)
+ 
+ax2 = plt.subplot(2,5,2)
+plot_learning_curve(model_gnb,'GNB', x_train, x_test, y_train, y_test, ax=ax2)
+ax2.set_title("Gaussian Naive Bayes", fontsize = titlesize)
+ 
+ax3 =  plt.subplot(2,5,3)
+plot_learning_curve(model_rf,'RF', x_train, x_test, y_train, y_test, ax=ax3)
+ax3.set_title("Random Forest", fontsize = titlesize)
+ 
+ax4 = plt.subplot(2,5,6)
+plot_learning_curve(model_knn,'KNN', x_train, x_test, y_train, y_test, ax=ax4)
+ax4.set_title("K-Nearest Neighbor", fontsize = titlesize)
+ 
+ax5 = plt.subplot(2,5,7)
+plot_learning_curve(model_svm,'SVM', x_train, x_test, y_train, y_test, ax=ax5)
+ax5.set_title("Support Vector Machine", fontsize = titlesize)
+ 
+ax6 = plt.subplot(2,5,8)
+plot_learning_curve(model_xgb,'XGB', x_train, x_test, y_train, y_test, ax=ax6)
+ax6.set_title("Extreme Gradient Boosting", fontsize = titlesize)
+ 
+ax7 = plt.subplot(2,5,(4,10))
+train_score = []
+test_score = []
+n3=20
+estimator = VotingClassifier(estimators = [('model_log',model_log),
+                                           ('model_gnb',model_gnb),
+                                           ('model_rf',model_rf),
+                                           ('model_knn',model_knn),
+                                           ('model_svm',model_svm),
+                                           ('model_xgb',model_xgb)], voting='soft')
+for i in range(n3, len(x_train),int(len(x_train)/5)):
+    estimator.fit(x_train.iloc[:i], y_train.iloc[:i])
+    y_train_pre = estimator.predict(x_train.iloc[:i])
+    y_test_pre = estimator.predict(x_test)
+    train_score.append(accuracy_score(y_train_pre, y_train.iloc[:i]))
+    test_score.append(accuracy_score(y_test_pre, y_test))
+    train_score_std = np.std(train_score)
+    test_score_std = np.std(test_score)
+    
+ax7.set_xlim([10,210])
+ax7.set_ylim([0.55,1.05])
+lw=2
+ax7.plot([i for i in range(n3, len(x_train), int(len(x_train)/5))], train_score,
+         marker = 'o', markersize = 3, linestyle='--', lw = lw, c = "r", label="Training Cohort")
+ax7.plot([i for i in range(n3, len(x_train), int(len(x_train)/5))], test_score, 
+         marker = 'o', markersize = 3, linestyle='--', lw = lw, c = "blue", label="Testing Cohort")
+ax7.fill_between([i for i in range(n3, len(x_train), int(len(x_train)/5))],
+                 train_score - train_score_std, train_score + train_score_std,
+                 alpha=0.1, color="r")
+ax7.fill_between([i for i in range(n3, len(x_train), int(len(x_train)/5))],
+                 test_score - test_score_std, test_score + test_score_std,
+                 alpha=0.1, color="blue")
+ax7.grid()
+ax7.legend()
+ax7.set_title("Ensemble Soft Voting Model", fontsize = titlesize)
+ 
+ 
+#plt.savefig(os.path.join(FilePath,'LearningCurve.png'))
+plt.savefig(os.path.join(FilePath,'output',str(seed),'LearningCurve.png'))
+plt.show
